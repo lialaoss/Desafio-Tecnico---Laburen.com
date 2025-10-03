@@ -1,14 +1,19 @@
 import express from 'express';
 import bodyParser from 'body-parser';
 import twilio from 'twilio';
+import cors from 'cors';
 import { procesarMensaje } from './agent.js';
+import productRoutes from './src/routes/productRoutes.js';
+import cartRoutes from './src/routes/cartRoutes.js';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-
+app.use(cors());
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 
 const requiredEnvVars = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'];
@@ -46,11 +51,29 @@ export async function enviarMensajeWhatsApp(toNumber, mensaje) {
 }
 
 
+app.get('/', (req, res) => {
+  res.send(`
+    <h1>🤖 WhatsApp Shopping Bot</h1>
+    <p>El bot está activo y funcionando.</p>
+    <p>Usuarios activos: ${userStates.size}</p>
+    <p><a href="/health">Ver estado del servidor</a></p>
+  `);
+});
+
+app.get('/health', (req, res) => {
+  res.status(200).json({ 
+    status: 'OK', 
+    message: 'WhatsApp Bot está funcionando',
+    activeUsers: userStates.size,
+    timestamp: new Date().toISOString()
+  });
+});
+
+
 app.post('/webhook', async (req, res) => {
   try {
     const incomingMessage = req.body.Body || '';
     const fromNumber = req.body.From.replace('whatsapp:', '');
-    const toNumber = req.body.To;
     
     console.log(`\n📩 Mensaje recibido de ${fromNumber}: "${incomingMessage}"`);
     
@@ -63,8 +86,9 @@ app.post('/webhook', async (req, res) => {
         displayOffset: 0,
         displayLimit: 10,
         waitingForSelection: false
-    });
-    await enviarMensajeWhatsApp(
+      });
+      
+      await enviarMensajeWhatsApp(
         fromNumber,
         '👋 ¡Hola! Bienvenido/a a nuestra tienda.\n\n' +
         '¿Qué producto estás buscando hoy?\n\n' +
@@ -73,51 +97,54 @@ app.post('/webhook', async (req, res) => {
         '• Crear tu carrito\n' +
         '• Darte recomendaciones\n\n' +
         '💡 Ejemplo: "busco pantalones negros"'
-    );
+      );
     }
     
     const userState = userStates.get(fromNumber);
     const respuesta = await procesarMensaje(incomingMessage, userState, fromNumber);
     
     if (respuesta) {
-        await enviarMensajeWhatsApp(fromNumber, respuesta);
+      await enviarMensajeWhatsApp(fromNumber, respuesta);
     }
+    
     userStates.set(fromNumber, userState);
     res.status(200).send('OK');
-    } catch (error) {
+  } catch (error) {
     console.error('❌ Error procesando webhook:', error);
     res.status(500).send('Error interno del servidor');
-}
+  }
 });
 
 
-app.get('/health', (req, res) => {
-  res.status(200).json({ 
-    status: 'OK', 
-    message: 'WhatsApp Bot está funcionando',
-    activeUsers: userStates.size,
-    timestamp: new Date().toISOString()
+app.use('/products', productRoutes);
+app.use('/carts', cartRoutes);
+
+
+app.use((req, res) => {
+  res.status(404).json({
+    success: false,
+    message: 'Endpoint no encontrado',
   });
 });
 
 
-app.get('/', (req, res) => {
-  res.send(`
-    <h1>🤖 WhatsApp Shopping Bot</h1>
-    <p>El bot está activo y funcionando.</p>
-    <p>Usuarios activos: ${userStates.size}</p>
-    <p><a href="/health">Ver estado del servidor</a></p>
-  `);
+app.use((err, req, res, next) => {
+  console.error('Error no manejado:', err);
+  res.status(500).json({
+    success: false,
+    message: 'Error interno del servidor',
+    error: process.env.NODE_ENV === 'development' ? err.message : undefined,
+  });
 });
-
 
 app.listen(PORT, () => {
   console.log(`\n🚀 Servidor iniciado en puerto ${PORT}`);
-  console.log(`📱 Webhook URL: http://localhost:${PORT}/webhook`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
+  console.log(`📱 Webhook URL: /webhook`);
+  console.log(`🏥 Health check: /health`);
+  console.log(`📦 API Products: /products`);
+  console.log(`🛒 API Carts: /carts`);
   console.log(`\n✅ Bot listo para recibir mensajes de WhatsApp\n`);
 });
-
 
 process.on('unhandledRejection', (error) => {
   console.error('❌ Error no manejado:', error);

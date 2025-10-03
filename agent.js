@@ -1,8 +1,7 @@
 import axios from 'axios';
 import { askGemini } from './geminiClient.js';
 
-const API_BASE = process.env.API_BASE || 'http://localhost:3000';
-
+const API_BASE = process.env.API_BASE || 'https://desafio-tecnico-laburen-com.onrender.com';
 
 export async function procesarMensaje(texto, userState, userPhone) {
   try {
