@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { askGemini } from '../geminiClient.js';
+import { askGemini } from './geminiClient.js';
 
 const API_BASE = process.env.API_BASE || 'http://localhost:3000';
 

@@ -14,7 +14,7 @@ async function seedProducts() {
     console.log('🚀 Iniciando importación de productos...');
 
 
-    const filePath = join(__dirname, '../../products.xlsx');
+    const filePath = join(__dirname, '../products.xlsx');
     const workbook = XLSX.readFile(filePath);
     const sheetName = workbook.SheetNames[0];
     const worksheet = workbook.Sheets[sheetName];
