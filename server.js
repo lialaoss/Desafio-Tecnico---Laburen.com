@@ -1,5 +1,4 @@
 import express from 'express';
-import bodyParser from 'body-parser';
 import twilio from 'twilio';
 import cors from 'cors';
 import { procesarMensaje } from './agent.js';
@@ -9,13 +8,12 @@ import cartRoutes from './src/routes/cartRoutes.js';
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// ✅ MIDDLEWARES CORRECTOS (sin duplicados)
 app.use(cors());
-app.use(bodyParser.urlencoded({ extended: false }));
-app.use(bodyParser.json());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-
+// Verificar variables de entorno
 const requiredEnvVars = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHONE_NUMBER'];
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
@@ -25,15 +23,15 @@ if (missingVars.length > 0) {
   process.exit(1);
 }
 
-
 const twilioClient = twilio(
   process.env.TWILIO_ACCOUNT_SID,
   process.env.TWILIO_AUTH_TOKEN
 );
 
-
+// Estado de usuarios
 export const userStates = new Map();
 
+// Función para enviar mensajes de WhatsApp
 export async function enviarMensajeWhatsApp(toNumber, mensaje) {
   try {
     const message = await twilioClient.messages.create({
@@ -50,7 +48,7 @@ export async function enviarMensajeWhatsApp(toNumber, mensaje) {
   }
 }
 
-
+// Rutas básicas
 app.get('/', (req, res) => {
   res.send(`
     <h1>🤖 WhatsApp Shopping Bot</h1>
@@ -69,14 +67,17 @@ app.get('/health', (req, res) => {
   });
 });
 
-
+// Webhook de WhatsApp
 app.post('/webhook', async (req, res) => {
   try {
+    console.log('\n📥 Webhook recibido:', JSON.stringify(req.body, null, 2));
+    
     const incomingMessage = req.body.Body || '';
     const fromNumber = req.body.From.replace('whatsapp:', '');
     
-    console.log(`\n📩 Mensaje recibido de ${fromNumber}: "${incomingMessage}"`);
+    console.log(`\n📩 Mensaje de ${fromNumber}: "${incomingMessage}"`);
     
+    // Inicializar estado del usuario si es nuevo
     if (!userStates.has(fromNumber)) {
       userStates.set(fromNumber, {
         currentCartId: null,
@@ -98,8 +99,12 @@ app.post('/webhook', async (req, res) => {
         '• Darte recomendaciones\n\n' +
         '💡 Ejemplo: "busco pantalones negros"'
       );
+      
+      res.status(200).send('OK');
+      return;
     }
     
+    // Procesar el mensaje
     const userState = userStates.get(fromNumber);
     const respuesta = await procesarMensaje(incomingMessage, userState, fromNumber);
     
@@ -107,19 +112,34 @@ app.post('/webhook', async (req, res) => {
       await enviarMensajeWhatsApp(fromNumber, respuesta);
     }
     
+    // Actualizar estado
     userStates.set(fromNumber, userState);
+    
     res.status(200).send('OK');
+    
   } catch (error) {
     console.error('❌ Error procesando webhook:', error);
-    res.status(500).send('Error interno del servidor');
+    
+    // Intentar informar al usuario del error
+    try {
+      const fromNumber = req.body.From.replace('whatsapp:', '');
+      await enviarMensajeWhatsApp(
+        fromNumber, 
+        '❌ Ocurrió un error. Por favor intentá de nuevo.'
+      );
+    } catch (sendError) {
+      console.error('❌ No se pudo enviar mensaje de error:', sendError);
+    }
+    
+    res.status(200).send('OK'); // Twilio requiere 200 siempre
   }
 });
 
-
+// Rutas de API
 app.use('/products', productRoutes);
 app.use('/carts', cartRoutes);
 
-
+// Manejo de rutas no encontradas
 app.use((req, res) => {
   res.status(404).json({
     success: false,
@@ -127,9 +147,9 @@ app.use((req, res) => {
   });
 });
 
-
+// Manejo de errores global
 app.use((err, req, res, next) => {
-  console.error('Error no manejado:', err);
+  console.error('❌ Error no manejado:', err);
   res.status(500).json({
     success: false,
     message: 'Error interno del servidor',
@@ -137,6 +157,7 @@ app.use((err, req, res, next) => {
   });
 });
 
+// Iniciar servidor
 app.listen(PORT, () => {
   console.log(`\n🚀 Servidor iniciado en puerto ${PORT}`);
   console.log(`📱 Webhook URL: /webhook`);
@@ -146,6 +167,7 @@ app.listen(PORT, () => {
   console.log(`\n✅ Bot listo para recibir mensajes de WhatsApp\n`);
 });
 
+// Manejo de errores no capturados
 process.on('unhandledRejection', (error) => {
   console.error('❌ Error no manejado:', error);
 });
