@@ -1,12 +1,12 @@
 import axios from 'axios';
 import { askGemini } from './geminiClient.js';
 
-const API_BASE = process.env.API_BASE || 'https://desafio-tecnico-laburen-com.onrender.com';
+const API_BASE = process.env.API_BASE || 'http://localhost:3000';
 
 export async function procesarMensaje(texto, userState, userPhone) {
   try {
     const intent = await analizarIntencion(texto);
-    console.log(`[Debug: Usuario ${userPhone} | Intención = ${intent}]`);
+    console.log(`[Usuario ${userPhone}] Intención detectada: ${intent}`);
     
     let respuesta = '';
     
@@ -57,16 +57,15 @@ export async function procesarMensaje(texto, userState, userPhone) {
     return respuesta;
     
   } catch (error) {
-    console.error('Error en procesarMensaje:', error);
-    return '❌ Ocurrió un error. Por favor intentá de nuevo en un momento.';
+    console.error('❌ Error en procesarMensaje:', error);
+    return '❌ Ocurrió un error. Por favor intentá de nuevo.';
   }
 }
-
 
 async function analizarIntencion(texto) {
   const lower = texto.toLowerCase();
   
-  if (lower.match(/ver mas|mostrar mas|mas productos|siguiente|continuar|siguiente pagina/)) {
+  if (lower.match(/ver mas|mostrar mas|mas productos|siguiente|continuar lista|siguiente pagina/)) {
     return 'ver_mas';
   }
 
@@ -78,7 +77,7 @@ async function analizarIntencion(texto) {
     return 'eliminar_producto';
   }
 
-  if (lower.match(/cambiar cantidad|modificar cantidad|actualizar cantidad|editar cantidad|quiero \d+.*del id|cambiar.*a \d+ unidades/)) {
+  if (lower.match(/cambiar cantidad|modificar cantidad|actualizar cantidad|editar cantidad|cambiar.*a \d+ unidades/)) {
     return 'editar_cantidad';
   }
   
@@ -94,11 +93,7 @@ async function analizarIntencion(texto) {
     return 'listar_todos';
   }
   
-  if (lower.match(/prendas? (de )?color|ropa (de )?color|tenes.*(rojo|azul|verde|negro|blanco|amarillo|gris)/)) {
-    return 'buscar_nombre';
-  }
-  
-  if (lower.match(/recomienda|recomendaci|sugiere|sugerencia|que compro|que me conviene|buscame|perfecta? para|recomiendame|comoda|comodo/)) {
+  if (lower.match(/recomienda|recomendaci|sugiere|sugerencia|que compro|que me conviene|recomiendame/)) {
     return 'sugerir';
   }
   
@@ -116,160 +111,165 @@ async function analizarIntencion(texto) {
     return 'buscar_nombre';
   }
 
-  if (lower.match(/ideal|aire libre|comod|modern|liger|diseño|diario|uso|usar|material|alta|calidad|buen|actividad/)) {
+  if (lower.match(/ideal|aire libre|comod|modern|liger|diseño|diario|alta calidad/)) {
     return 'buscar_descripcion';
   }
+  
   return 'otra';
 }
 
-
 async function extraerComponentesBusqueda(texto) {
-  const prompt = `
-Analiza este texto y extrae información de búsqueda de productos de ropa:
+  const prompt = `Analiza este texto y extrae información de búsqueda:
 "${texto}"
 
-Los productos tienen estos campos:
-- tipo: pantalon, camiseta, camisa, falda, sudadera, chaqueta, vestido, short, remera, buzo, campera (SIEMPRE EN SINGULAR, sin acento)
-- color: rojo, azul, verde, negro, blanco, gris, rosa, morado, naranja, amarillo, marron, beige, celeste
-- categoria: deportivo, casual, formal, elegante, sport
-- talla: s, m, l, xl, xxl
-- description: ideal, diseño, alta calidad, material, moderno, elegante, aire, libre, comoda, ligera, perfecta, diario
+Extrae: tipo, color, categoria, talla
+Responde SOLO en formato JSON:
+{"tipo":"pantalon","color":"rojo","categoria":null,"talla":null}
 
-Extrae lo que encuentres y responde SOLO en este formato JSON:
-{
-  "tipo": "palabra_singular_o_null",
-  "color": "color_o_null",
-  "categoria": "categoria_o_null",
-  "talla": "talla_o_null",
-  "description": "description_o_null"
-}
-
-Ejemplos:
-"pantalones rojos" -> {"tipo":"pantalon","color":"rojo","categoria":null,"talla":null}
-"camisetas deportivas talla M" -> {"tipo":"camiseta","color":null,"categoria":"deportivo","talla":"m"}
-"faldas negras" -> {"tipo":"falda","color":"negro","categoria":null,"talla":null}
-"busco shorts" -> {"tipo":"short","color":null,"categoria":null,"talla":null}
-"pantalon" -> {"tipo":"pantalon","color":null,"categoria":null,"talla":null}
-
-IMPORTANTE: 
-- Convierte SIEMPRE plurales a singular (pantalones->pantalon, camisas->camisa)
-- Tipo siempre sin acento: pantalon (no pantalón)
-- Si no encuentras algo, usa null
-`;
+Importante:
+- Plurales a singular: pantalones->pantalon
+- Sin acentos: pantalon (no pantalón)
+- Si no encuentras algo, usa null`;
 
   try {
     const respuesta = await askGemini(prompt);
     const jsonMatch = respuesta.match(/\{[\s\S]*?\}/);
     
     if (jsonMatch) {
-      const componentes = JSON.parse(jsonMatch[0]);
-      return componentes;
+      return JSON.parse(jsonMatch[0]);
     }
   } catch (error) {
-    console.log('[Debug: Error en Gemini extracción]');
+    console.log('⚠️ Error en Gemini extracción');
   }
   
   return { tipo: null, color: null, categoria: null, talla: null };
 }
 
-
 function construirQueryBusqueda(componentes) {
   const partes = [];
   
-  if (componentes.tipo) {
-    partes.push(componentes.tipo);
-  }
-  
-  if (componentes.color) {
-    partes.push(componentes.color);
-  }
-  
-  if (componentes.categoria && !componentes.tipo) {
-    partes.push(componentes.categoria);
-  }
+  if (componentes.tipo) partes.push(componentes.tipo);
+  if (componentes.color) partes.push(componentes.color);
+  if (componentes.categoria && !componentes.tipo) partes.push(componentes.categoria);
   
   return partes.join(' ');
 }
 
+// Función auxiliar para formatear productos para WhatsApp
+function formatearProducto(p, index = null) {
+  const lineas = [];
+  
+  if (index !== null) {
+    lineas.push(`${index}. *${p.name}*`);
+  } else {
+    lineas.push(`*${p.name}*`);
+  }
+  
+  lineas.push(`   ID: ${p.id} | Precio: $${p.price}`);
+  lineas.push(`   Stock: ${p.stock} unidades`);
+  
+  return lineas.join('\n');
+}
 
 async function listarTodos(userState) {
   try {
+    console.log(`📡 Llamando a: ${API_BASE}/products`);
     const res = await axios.get(`${API_BASE}/products`);
-    const productos = res.data.data;
+    
+    console.log(`✅ Respuesta recibida:`, res.data);
+    
+    const productos = res.data.data || [];
+    
+    if (productos.length === 0) {
+      return '❌ No hay productos disponibles en este momento.';
+    }
     
     userState.lastProducts = productos;
     userState.lastSearchQuery = 'todos';
     userState.displayOffset = 0;
     
-    let mensaje = '📦 *Catálogo completo:*\n\n';
+    const primeros10 = productos.slice(0, 10);
     
-    productos.slice(0, 10).forEach(p => {
-      mensaje += `• ${p.name}\n`;
-      mensaje += `  ID: ${p.id} | $${p.price} | Stock: ${p.stock}\n\n`;
+    let mensaje = '📦 *CATÁLOGO COMPLETO*\n\n';
+    
+    primeros10.forEach((p, i) => {
+      mensaje += formatearProducto(p, i + 1) + '\n\n';
     });
     
-    mensaje += `(Mostrando 10 de ${productos.length} productos)\n\n`;
-    mensaje += '💡 Escribí "ver más" para mostrar más productos';
+    mensaje += `Mostrando ${primeros10.length} de ${productos.length} productos\n\n`;
+    mensaje += '💡 Escribí "ver mas" para ver más productos\n';
+    mensaje += '💡 Escribí "agregar ID X" para agregar al carrito';
     
     userState.phase = 'exploring';
+    
+    console.log('📤 Mensaje generado correctamente');
     return mensaje;
     
   } catch (error) {
-    return '❌ Hubo un problema al cargar los productos. Intentá de nuevo más tarde.';
+    console.error('❌ Error en listarTodos:', error.message);
+    return '❌ Error al cargar productos. Verificá que la API esté funcionando.';
   }
 }
 
 async function buscarPorCategoria(texto, userState) {
   try {
-    const prompt = `Del texto: "${texto}"\nExtrae SOLO la categoría.\nCategorías: deportivo, casual, formal, elegante, sport\nResponde solo una palabra.`;
+    const prompt = `Del texto: "${texto}"\nExtrae SOLO la categoría (deportivo, casual, formal, elegante).\nResponde una palabra.`;
     
     const respuesta = await askGemini(prompt);
     const categoria = respuesta.trim().toLowerCase();
     
+    console.log(`📡 Buscando categoría: ${categoria}`);
     const res = await axios.get(`${API_BASE}/products?q=${encodeURIComponent(categoria)}`);
-    const productos = res.data.data;
+    const productos = res.data.data || [];
     
     if (productos.length === 0) {
-      return '❌ No encontré productos en esa categoría.\n\nCategorías disponibles: deportivo, casual, formal, elegante';
+      return `❌ No encontré productos en "${categoria}".\n\nCategorías: deportivo, casual, formal, elegante`;
     }
     
     userState.lastProducts = productos;
     userState.lastSearchQuery = categoria;
+    userState.displayOffset = 0;
     
-    let mensaje = `✅ Encontré ${productos.length} producto${productos.length > 1 ? 's' : ''} en "${categoria}":\n\n`;
-    productos.slice(0, 10).forEach(p => {
-      mensaje += `• ${p.name}\n  ID: ${p.id} | Precio: $${p.price} | Stock: ${p.stock}\n\n`;
+    const primeros10 = productos.slice(0, 10);
+    
+    let mensaje = `✅ Encontré ${productos.length} productos en "${categoria}"\n\n`;
+    
+    primeros10.forEach((p, i) => {
+      mensaje += formatearProducto(p, i + 1) + '\n\n';
     });
     
     if (productos.length > 10) {
-      mensaje += `(Mostrando 10 de ${productos.length} productos)\n`;
+      mensaje += `Mostrando 10 de ${productos.length}\n\n`;
     }
-    mensaje += '💡 Podés agregar productos a tu carrito usando el ID.';
+    
+    mensaje += '💡 Escribí "agregar ID X" para agregar al carrito';
+    
     return mensaje;
     
   } catch (error) {
-    console.log('❌ Lo siento, hubo un problema al buscar productos. Intenta de nuevo más tarde.');
+    console.error('❌ Error en buscarPorCategoria:', error);
+    return '❌ Error al buscar productos.';
   }
 }
 
-
 async function buscarPorNombre(texto, userState) {
   try {
-    
     const componentes = await extraerComponentesBusqueda(texto);
     let query = construirQueryBusqueda(componentes);
     
     if (!query) {
-      return '❌ No entendí qué estás buscando.\n\n💡 Ejemplos:\n• "pantalones"\n• "camisetas rojas"\n• "pantalones negros talla M"';
+      return '❌ No entendí qué buscás.\n\n💡 Ejemplos:\n• "pantalones"\n• "camisetas rojas"\n• "pantalones negros"';
     }
     
+    console.log(`📡 Buscando: ${query}`);
     let res = await axios.get(`${API_BASE}/products?q=${encodeURIComponent(query)}`);
-    let productos = res.data.data;
+    let productos = res.data.data || [];
     
+    // Si no encuentra con color, buscar solo tipo
     if (productos.length === 0 && componentes.color) {
       query = componentes.tipo;
       res = await axios.get(`${API_BASE}/products?q=${encodeURIComponent(query)}`);
-      productos = res.data.data;
+      productos = res.data.data || [];
       
       if (productos.length > 0 && componentes.color) {
         const colorLower = componentes.color.toLowerCase();
@@ -280,56 +280,40 @@ async function buscarPorNombre(texto, userState) {
       }
     }
     
-    if (componentes.talla && productos.length > 0) {
-      const tallaBuscada = componentes.talla.toUpperCase();
-      const productosFiltrados = productos.filter(p => 
-        p.name.toUpperCase().includes(`TALLA ${tallaBuscada}`)
-      );
-      
-      if (productosFiltrados.length > 0) {
-        productos = productosFiltrados;
-      }
-    }
-    
     if (productos.length === 0) {
-      return '❌ No encontré productos con esa búsqueda.\n\n💡 Probá con:\n• Solo tipo: "pantalones", "camisetas"\n• Con color: "camisetas rojas"';
+      return '❌ No encontré productos con esa búsqueda.\n\n💡 Probá con:\n• "pantalones"\n• "camisetas rojas"';
     }
 
     userState.lastProducts = productos;
     userState.lastSearchQuery = query;
     userState.displayOffset = 0;
     
-    let mensaje = `✅ Encontré ${productos.length} producto${productos.length > 1 ? 's' : ''}:\n\n`;
+    const primeros10 = productos.slice(0, 10);
     
-    productos.slice(0, 10).forEach((p, index) => {
-      mensaje += `• ${p.name}\n`;
-      mensaje += `ID: ${p.id} | Precio: $${p.price} | Stock: ${p.stock}\n\n`;
+    let mensaje = `✅ Encontré ${productos.length} producto${productos.length > 1 ? 's' : ''}\n\n`;
+    
+    primeros10.forEach((p, i) => {
+      mensaje += formatearProducto(p, i + 1) + '\n\n';
     });
     
     if (productos.length > 10) {
-      mensaje += `(Mostrando 10 de ${productos.length} productos)\n\n`;
-      userState.displayOffset = 0;
+      mensaje += `Mostrando 10 de ${productos.length}\n\n`;
     }
     
-    if (productos.length > 1) {
-      mensaje += '💡 Para agregar uno a tu carrito podés decir: "comprar el 1" o "agregar ID 113".';
-      userState.waitingForSelection = true;
-    } else {
-      mensaje += '💡 Para agregarlo a tu carrito escribí: "agregar al carrito".';
-    }
+    mensaje += '💡 Escribí "agregar ID X" para agregar al carrito';
 
     return mensaje;
     
   } catch (error) {
-    return '❌ Hubo un problema al buscar: ' + error.message;
+    console.error('❌ Error en buscarPorNombre:', error);
+    return '❌ Error al buscar productos.';
   }
 }
-
 
 async function buscarPorDescripcion(texto, userState) {
   try {
     const res = await axios.get(`${API_BASE}/products`);
-    let productos = res.data.data;
+    let productos = res.data.data || [];
     
     const palabrasClave = ['ideal', 'aire libre', 'comoda', 'moderna', 'ligera', 'diseño', 'diario', 'alta calidad'];
     const keywords = palabrasClave.filter(palabra => 
@@ -337,7 +321,7 @@ async function buscarPorDescripcion(texto, userState) {
     );
     
     if (keywords.length === 0) {
-      return '❌ No entendí qué características buscás.\n\n💡 Ejemplos:\n• "ropa cómoda para el diario"\n• "prendas para aire libre"';
+      return '❌ No entendí qué características buscás.\n\n💡 Ejemplos:\n• "ropa cómoda"\n• "prendas para aire libre"';
     }
     
     const productosFiltrados = productos.filter(p => {
@@ -346,72 +330,49 @@ async function buscarPorDescripcion(texto, userState) {
     });
     
     if (productosFiltrados.length === 0) {
-      return '❌ No encontré productos con esas características.\n\n💡 Probá buscar por tipo o categoría.';
+      return '❌ No encontré productos con esas características.';
     }
     
     userState.lastProducts = productosFiltrados;
     
-    let mensaje = `✅ *${productosFiltrados.length}* producto${productosFiltrados.length > 1 ? 's' : ''} encontrados:\n\n`;
+    const primeros10 = productosFiltrados.slice(0, 10);
+    let mensaje = `✅ ${productosFiltrados.length} productos encontrados\n\n`;
     
-    productosFiltrados.slice(0, 10).forEach(p => {
-      mensaje += `• ${p.name}\n  ID: ${p.id} | $${p.price}\n\n`;
+    primeros10.forEach((p, i) => {
+      mensaje += formatearProducto(p, i + 1) + '\n\n';
     });
     
     return mensaje;
     
   } catch (error) {
-    return '❌ Error al buscar por descripción.';
+    console.error('❌ Error en buscarPorDescripcion:', error);
+    return '❌ Error al buscar.';
   }
 }
 
 async function sugerirProductos(texto, userState) {
   try {
     const res = await axios.get(`${API_BASE}/products`);
-    const productos = res.data.data;
+    const productos = res.data.data || [];
     const muestra = productos.sort(() => 0.5 - Math.random()).slice(0, 5);
     
     userState.lastProducts = muestra;
     
-    let mensaje = '💡 *Te recomiendo estos productos:*\n\n';
+    let mensaje = '💡 *TE RECOMIENDO:*\n\n';
     
-    muestra.forEach((p, index) => {
-      mensaje += `${index + 1}. ${p.name}\n`;
-      mensaje += `   ID: ${p.id} | $${p.price}\n\n`;
+    muestra.forEach((p, i) => {
+      mensaje += formatearProducto(p, i + 1) + '\n\n';
     });
+    
+    mensaje += '💡 Escribí "agregar ID X" para agregar al carrito';
     
     return mensaje;
     
   } catch (error) {
-    return '❌ Hubo un problema al sugerir productos.';
+    console.error('❌ Error en sugerirProductos:', error);
+    return '❌ Error al sugerir productos.';
   }
 }
-
-
-async function extraerCantidad(texto) {
-  const prompt = `
-Del texto: "${texto}"
-Extrae SOLO la cantidad.
-"un/una/uno" = 1, "dos" = 2, etc.
-Si no hay cantidad = 1
-Responde SOLO el número.
-`;
-
-  try {
-    const respuesta = await askGemini(prompt);
-    const numero = parseInt(respuesta.trim());
-    return isNaN(numero) ? 1 : numero;
-  } catch (error) {
-    const numeroMatch = texto.match(/(\d+)/);
-    if (numeroMatch) return parseInt(numeroMatch[1]);
-    
-    const palabras = { 'dos': 2, 'tres': 3, 'cuatro': 4, 'cinco': 5 };
-    for (const [palabra, num] of Object.entries(palabras)) {
-      if (texto.toLowerCase().includes(palabra)) return num;
-    }
-    return 1;
-  }
-}
-
 
 async function verificarStock(productId, cantidad) {
   try {
@@ -428,13 +389,12 @@ async function verificarStock(productId, cantidad) {
   }
 }
 
-
 async function agregarProductoPorId(productId, cantidad, userState) {
   try {
     const stockInfo = await verificarStock(productId, cantidad);
     
     if (!stockInfo.disponible) {
-      return `❌ Lo siento, "${stockInfo.producto?.name || 'ese producto'}" no tiene stock suficiente.\n\nStock disponible: ${stockInfo.stockActual}\nCantidad solicitada: ${cantidad}`;
+      return `❌ Stock insuficiente\n\n"${stockInfo.producto?.name || 'Producto'}"\nDisponible: ${stockInfo.stockActual}\nSolicitado: ${cantidad}`;
     }
     
     const producto = stockInfo.producto;
@@ -454,35 +414,36 @@ async function agregarProductoPorId(productId, cantidad, userState) {
       userState.currentCartId = cart.id;
       userState.phase = 'cart_management';
       
-      mensaje = `✅ Carrito creado (ID: ${cart.id})\n\n`;
-      mensaje += `Agregué ${cantidad}x ${producto.name}\n`;
+      mensaje = `✅ *CARRITO CREADO*\n\n`;
+      mensaje += `Agregado: ${cantidad}x ${producto.name}\n`;
       mensaje += `Total: $${cart.totalPrice.toFixed(2)}\n\n`;
     } else {
       const cartRes = await axios.patch(`${API_BASE}/carts/${userState.currentCartId}`, body);
       const cart = cartRes.data.data;
       
-      mensaje = `✅ Agregué ${cantidad}x ${producto.name}\n\n`;
-      mensaje += `Total actualizado: $${cart.totalPrice.toFixed(2)}\n\n`;
+      mensaje = `✅ *AGREGADO AL CARRITO*\n\n`;
+      mensaje += `${cantidad}x ${producto.name}\n`;
+      mensaje += `Total: $${cart.totalPrice.toFixed(2)}\n\n`;
     }
     
     userState.phase = 'post_add';
     mensaje += '💡 Opciones:\n';
     mensaje += '• "seguir comprando"\n';
-    mensaje += '• "cambiar cantidad del ID X a Y"\n';
-    mensaje += '• "ver carrito" o "finalizar compra"';
+    mensaje += '• "ver carrito"\n';
+    mensaje += '• "finalizar compra"';
     
     return mensaje;
     
   } catch (error) {
-    return `❌ Error al agregar el producto: ${error.response?.data?.message || error.message}`;
+    console.error('❌ Error en agregarProductoPorId:', error);
+    return `❌ Error al agregar: ${error.response?.data?.message || error.message}`;
   }
 }
-
 
 async function agregarDesdeTextoConId(texto, userState) {
   const idMatch = texto.match(/(?:agregar|comprar|id)\s*(\d+)/i);
   if (!idMatch) {
-    return "❌ No encontré un ID válido. Probá con: 'agregar ID 113'";
+    return "❌ ID no válido. Probá: 'agregar ID 113'";
   }
   
   const productId = parseInt(idMatch[1]);
@@ -492,42 +453,41 @@ async function agregarDesdeTextoConId(texto, userState) {
   return await agregarProductoPorId(productId, cantidad, userState);
 }
 
-
 async function agregarAlCarrito(texto, userState) {
   try {
-    const cantidad = 1;
     const componentes = await extraerComponentesBusqueda(texto);
     const query = construirQueryBusqueda(componentes);
     
     if (!query) {
-      return '❌ Necesito que me indiques qué producto querés.\n\nEjemplo: "comprar 2 camisetas rojas"';
+      return '❌ Indicá qué producto querés.\n\nEjemplo: "comprar 2 camisetas rojas"';
     }
     
     const res = await axios.get(`${API_BASE}/products?q=${encodeURIComponent(query)}`);
-    let productos = res.data.data;
+    let productos = res.data.data || [];
     
     if (productos.length === 0) {
-      return `❌ No encontré productos para "${query}".\n\nProbá buscando primero en el catálogo.`;
+      return `❌ No encontré "${query}".\n\nProbá buscando primero.`;
     }
     
     if (productos.length > 1) {
+      userState.lastProducts = productos;
+      
       let mensaje = `Encontré *${productos.length}* opciones:\n\n`;
       productos.slice(0, 5).forEach((p, i) => {
         mensaje += `${i + 1}. ${p.name} (ID ${p.id}) - $${p.price}\n`;
       });
-      mensaje += '\n💡 Escribí "agregar ID X" para elegir uno.';
+      mensaje += '\n💡 Escribí "agregar ID X"';
       
-      userState.lastProducts = productos;
       return mensaje;
     }
     
-    return await agregarProductoPorId(productos[0].id, cantidad, userState);
+    return await agregarProductoPorId(productos[0].id, 1, userState);
     
   } catch (error) {
-    return '❌ Error al buscar el producto: ' + error.message;
+    console.error('❌ Error en agregarAlCarrito:', error);
+    return '❌ Error al agregar.';
   }
 }
-
 
 async function verCarrito(userState, esFinal = false) {
   if (!userState.currentCartId) {
@@ -542,18 +502,18 @@ async function verCarrito(userState, esFinal = false) {
       return '🛒 Tu carrito está vacío.';
     }
     
-    let mensaje = '\n🛒 *Tu carrito:*\n\n';
+    let mensaje = '🛒 *TU CARRITO*\n\n';
     
     cart.items.forEach(item => {
       const subtotal = (item.product.price * item.qty).toFixed(2);
-      mensaje += `• ${item.qty}x ${item.product.name}\n`;
-      mensaje += `  $${item.product.price} c/u → $${subtotal}\n\n`;
+      mensaje += `${item.qty}x ${item.product.name}\n`;
+      mensaje += `$${item.product.price} c/u = $${subtotal}\n\n`;
     });
 
-    mensaje += `*Total: $${cart.totalPrice.toFixed(2)}*\n\n`;
+    mensaje += `*TOTAL: $${cart.totalPrice.toFixed(2)}*\n\n`;
     
     if (esFinal) {
-      mensaje += '✅ ¡Gracias por tu compra!\nTu pedido ha sido registrado.';
+      mensaje += '✅ ¡Gracias por tu compra!\nPedido registrado.';
       userState.currentCartId = null;
       userState.phase = 'welcome';
     } else {
@@ -563,33 +523,31 @@ async function verCarrito(userState, esFinal = false) {
     return mensaje;
     
   } catch (error) {
-    return '❌ Error al consultar el carrito: ' + error.message;
+    console.error('❌ Error en verCarrito:', error);
+    return '❌ Error al consultar el carrito.';
   }
 }
 
-
 async function eliminarProductoDelCarrito(texto, userState) {
   if (!userState.currentCartId) {
-    return '🛒 Tu carrito está vacío. No hay nada para eliminar.';
+    return '🛒 Carrito vacío.';
   }
-
-  let mensaje = '';
 
   try {
     const cartRes = await axios.get(`${API_BASE}/carts/${userState.currentCartId}`);
     const cart = cartRes.data.data;
 
     if (!cart.items || cart.items.length === 0) {
-      return '🛒 Tu carrito está vacío.';
+      return '🛒 Carrito vacío.';
     }
 
     const idMatch = texto.match(/(?:id\s*)?(\d+)/i);
     if (!idMatch) {
       let mensaje = '*Productos en tu carrito:*\n\n';
       cart.items.forEach(item => {
-        mensaje += `• ID: ${item.product.id} | ${item.qty}x ${item.product.name}\n`;
+        mensaje += `ID: ${item.product.id} | ${item.qty}x ${item.product.name}\n`;
       });
-      mensaje += '\n¿Qué producto querés eliminar?\nEscribí: "eliminar ID [número]"';
+      mensaje += '\n¿Qué eliminar? Escribí: "eliminar ID X"';
       return mensaje;
     }
 
@@ -597,19 +555,22 @@ async function eliminarProductoDelCarrito(texto, userState) {
     const itemToRemove = cart.items.find(item => item.product.id === productIdToRemove);
     
     if (!itemToRemove) {
-      return `\n❌ El producto con ID ${productIdToRemove} no está en tu carrito.`;
+      return `❌ Producto ID ${productIdToRemove} no está en el carrito.`;
     }
+    
     const remainingItems = cart.items
       .filter(item => item.product.id !== productIdToRemove)
       .map(item => ({
         product_id: item.product.id,
         qty: item.qty
       }));
+      
     if (remainingItems.length === 0) {
       userState.currentCartId = null;
       userState.phase = 'welcome';
-      return `\n✅ Eliminé ${itemToRemove.qty}x ${itemToRemove.product.name} de tu carrito.\n\nTu carrito ahora está *vacío*.\n\n💡 ¿Qué estás buscando ahora?`;
+      return `✅ Eliminado: ${itemToRemove.qty}x ${itemToRemove.product.name}\n\nCarrito vacío.`;
     }
+    
     const updateRes = await axios.patch(
       `${API_BASE}/carts/${userState.currentCartId}`,
       { items: remainingItems }
@@ -617,68 +578,63 @@ async function eliminarProductoDelCarrito(texto, userState) {
 
     const updatedCart = updateRes.data.data;
 
-    mensaje += `\n✅ Eliminé ${itemToRemove.qty}x ${itemToRemove.product.name} de tu carrito.`;
-    mensaje += `\nNuevo total: $${updatedCart.totalPrice.toFixed(2)}`; 
-    mensaje += '\n\n💡 ¿Querés seguir comprando o finalizar tu compra?';
+    let mensaje = `✅ Eliminado: ${itemToRemove.qty}x ${itemToRemove.product.name}\n`;
+    mensaje += `Nuevo total: $${updatedCart.totalPrice.toFixed(2)}`;
+
+    return mensaje;
 
   } catch (error) {
-    return `❌ Error al eliminar el producto: ${error.response?.data?.message || error.message}`;
+    console.error('❌ Error en eliminarProducto:', error);
+    return `❌ Error al eliminar.`;
   }
 }
 
-
 async function editarCantidadProducto(texto, userState) {
   if (!userState.currentCartId) {
-    return 'Tu carrito está vacío. Primero agregá productos.';
+    return 'Carrito vacío.';
   }
-
-  let mensaje = '';
 
   try {
     const cartRes = await axios.get(`${API_BASE}/carts/${userState.currentCartId}`);
     const cart = cartRes.data.data;
 
     if (!cart.items || cart.items.length === 0) {
-      return '🛒 Tu carrito está vacío.';
+      return '🛒 Carrito vacío.';
     }
 
     const idMatch = texto.match(/(?:id|producto)\s*(\d+)/i);
-    const cantidadMatch = texto.match(/(?:a|cambiar.*?a|modificar.*?a)\s+(\d+)\s*(?:unidades?|x)?/i);
+    const cantidadMatch = texto.match(/(?:a|cambiar.*?a)\s+(\d+)\s*(?:unidades?|x)?/i);
     
     if (!idMatch) {
-      mensaje += '\nProductos en tu carrito:\n\n';
+      let mensaje = '*Productos en tu carrito:*\n\n';
       cart.items.forEach(item => {
-        mensaje += `• ID: ${item.product.id} | Cantidad actual: ${item.qty}x | ${item.product.name}\n`;
+        mensaje += `ID: ${item.product.id} | ${item.qty}x | ${item.product.name}\n`;
       });
-      mensaje += '\n💡 ¿Qué producto querés modificar? Ejemplo: "cambiar cantidad del ID 154 a 3 unidades"';
+      mensaje += '\n💡 Ejemplo: "cambiar ID 154 a 3"';
       return mensaje;
     }
 
     if (!cantidadMatch) {
-      return '❌ ¿A cuántas unidades querés cambiar? Ejemplo: "cambiar ID 154 a 3 unidades"';
+      return '❌ ¿A cuántas unidades? Ejemplo: "cambiar ID 154 a 3"';
     }
 
     const productId = parseInt(idMatch[1]);
     const nuevaCantidad = parseInt(cantidadMatch[1]);
 
     if (nuevaCantidad <= 0) {
-      return '❌ La cantidad debe ser mayor a 0. Si querés eliminar el producto, usá: "eliminar ID [número]"';
+      return '❌ Cantidad debe ser mayor a 0. Para eliminar usá: "eliminar ID X"';
     }
 
     const itemToEdit = cart.items.find(item => item.product.id === productId);
     
     if (!itemToEdit) {
-      return `\n❌ El producto con ID ${productId} no está en tu carrito.`;
+      return `❌ Producto ID ${productId} no está en el carrito.`;
     }
 
     const stockInfo = await verificarStock(productId, nuevaCantidad);
     
     if (!stockInfo.disponible) {
-      mensaje += `\n❌ Lo siento, "${itemToEdit.product.name}" no tiene suficiente stock.`;
-      mensaje += `\nStock disponible: ${stockInfo.stockActual} unidades`;
-      mensaje += `\nCantidad solicitada: ${nuevaCantidad} unidades`;
-      mensaje += `\nCantidad actual en tu carrito: ${itemToEdit.qty} unidades`;
-      return mensaje;
+      return `❌ Stock insuficiente\n\n"${itemToEdit.product.name}"\nDisponible: ${stockInfo.stockActual}\nSolicitado: ${nuevaCantidad}\nActual en carrito: ${itemToEdit.qty}`;
     }
 
     const updatedItems = cart.items.map(item => ({
@@ -692,21 +648,23 @@ async function editarCantidadProducto(texto, userState) {
     );
 
     const updatedCart = updateRes.data.data;
-    const cantidadAnterior = itemToEdit.qty;
 
-    mensaje += `\n✅ Cantidad actualizada para "${itemToEdit.product.name}"`;
-    mensaje += `\nAntes: ${cantidadAnterior}x | Ahora: ${nuevaCantidad}x`;
-    mensaje += `\nNuevo total del carrito: $${updatedCart.totalPrice.toFixed(2)}`;
-    mensaje += '\n\n💡 Podés seguir comprando, modificar otras cantidades o finalizar tu compra.';
+    let mensaje = `✅ Cantidad actualizada\n\n`;
+    mensaje += `"${itemToEdit.product.name}"\n`;
+    mensaje += `Antes: ${itemToEdit.qty}x | Ahora: ${nuevaCantidad}x\n`;
+    mensaje += `Nuevo total: $${updatedCart.totalPrice.toFixed(2)}`;
+
+    return mensaje;
 
   } catch (error) {
-    return `❌ Error al editar la cantidad: ${error.response?.data?.message || error.message}`;
+    console.error('❌ Error en editarCantidad:', error);
+    return `❌ Error al editar.`;
   }
 }
 
 async function mostrarMasProductos(userState) {
   if (!userState.lastProducts || userState.lastProducts.length === 0) {
-    return '❌ No hay búsqueda activa para mostrar más resultados. Probá buscando algo primero.';
+    return '❌ No hay búsqueda activa. Buscá algo primero.';
   }
   
   const displayLimit = userState.displayLimit || 10;
@@ -714,7 +672,7 @@ async function mostrarMasProductos(userState) {
   
   if (userState.displayOffset >= userState.lastProducts.length) {
     userState.displayOffset = userState.lastProducts.length - displayLimit;
-    return '✅ Ya mostramos todos los productos de esta búsqueda.';
+    return '✅ Ya mostramos todos los productos.';
   }
   
   const productos = userState.lastProducts.slice(
@@ -722,20 +680,20 @@ async function mostrarMasProductos(userState) {
     userState.displayOffset + displayLimit
   );
   
-  let mensaje = `\n✅ Mostrando productos ${userState.displayOffset + 1} a ${userState.displayOffset + productos.length} de ${userState.lastProducts.length}:\n\n`;
+  let mensaje = `Productos ${userState.displayOffset + 1} a ${userState.displayOffset + productos.length} de ${userState.lastProducts.length}\n\n`;
   
-  productos.forEach((p, index) => {
-    mensaje += `• ${p.name}\n`;
-    mensaje += ` ID: ${p.id} | $${p.price} | Stock: ${p.stock}\n\n`;
+  productos.forEach((p, i) => {
+    mensaje += formatearProducto(p, userState.displayOffset + i + 1) + '\n\n';
   });
   
   if (userState.displayOffset + displayLimit < userState.lastProducts.length) {
-    mensaje += '💡 Escribí "ver más" para mostrar más productos.';
+    mensaje += '💡 Escribí "ver mas" para continuar';
   }
+  
   return mensaje;
 }
 
 async function continuarComprando(userState) {
   userState.phase = 'exploring';
-  return '\n¡Perfecto! ¿Qué más estás buscando?\n\nPodés buscar por nombre, categoría, o pedirme recomendaciones.';
+  return '¡Perfecto! ¿Qué más buscás?\n\nPodés buscar por nombre, categoría o pedir recomendaciones.';
 }
