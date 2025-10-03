@@ -1,0 +1,13 @@
+# Environment variables
+.env
+.env.local
+
+# Database
+*.db
+*.db-journal
+prisma/dev.db
+prisma/dev.db-journal
+
+# Prisma
+node_modules
+.DS_Store

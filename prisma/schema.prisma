@@ -1,0 +1,57 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Product {
+  id          Int        @id @default(autoincrement())
+  name        String
+  description String?
+  price       Float
+  stock       Int
+  
+  tipo        String?    @map("tipo_prenda")
+  talla       String?
+  color       String?
+  precio50    Float?     @map("precio_50_u")
+  precio100   Float?     @map("precio_100_u")
+  precio200   Float?     @map("precio_200_u")
+  disponible  Boolean    @default(true)
+  categoria   String?
+  
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+  
+  cartItems   CartItem[]
+
+  @@index([name])
+  @@index([categoria])
+  @@map("products")
+}
+
+model Cart {
+  id        Int        @id @default(autoincrement())
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+  
+  items     CartItem[]
+
+  @@map("carts")
+}
+
+model CartItem {
+  id        Int      @id @default(autoincrement())
+  cartId    Int      @map("cart_id")
+  productId Int      @map("product_id")
+  qty       Int
+  
+  cart      Cart     @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  product   Product  @relation(fields: [productId], references: [id])
+
+  @@unique([cartId, productId])
+  @@map("cart_items")
+}
