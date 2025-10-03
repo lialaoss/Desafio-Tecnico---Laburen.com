@@ -2,11 +2,11 @@
   "name": "ecommerce-ai-agent",
   "version": "1.0.0",
   "description": "Agente de IA para E-commerce con WhatsApp",
-  "main": "src/index.js",
+  "main": "server.js",
   "type": "module",
   "scripts": {
-    "dev": "node --watch src/index.js",
-    "start": "node src/index.js",
+    "dev": "node --watch server.js",
+    "start": "node server.js",
     "db:push": "prisma db push",
     "db:studio": "prisma studio",
     "db:seed": "node src/scripts/seedProducts.js"
