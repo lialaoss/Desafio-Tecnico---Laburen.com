@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import bodyParser from 'body-parser';
 import twilio from 'twilio';
@@ -15,7 +16,7 @@ const requiredEnvVars = ['TWILIO_ACCOUNT_SID', 'TWILIO_AUTH_TOKEN', 'TWILIO_PHON
 const missingVars = requiredEnvVars.filter(varName => !process.env[varName]);
 
 if (missingVars.length > 0) {
-  console.error(`❌ Faltan variables de entorno: ${missingVars.join(', ')}`);
+  console.error(`Faltan variables de entorno: ${missingVars.join(', ')}`);
   console.error('Por favor configurá estas variables antes de iniciar el servidor.');
   process.exit(1);
 }
@@ -37,10 +38,10 @@ export async function enviarMensajeWhatsApp(toNumber, mensaje) {
       to: `whatsapp:${toNumber}`
     });
     
-    console.log(`✅ Mensaje enviado a ${toNumber}: ${message.sid}`);
+    console.log(`Mensaje enviado a ${toNumber}: ${message.sid}`);
     return message;
   } catch (error) {
-    console.error(`❌ Error enviando mensaje a ${toNumber}:`, error.message);
+    console.error(`Error enviando mensaje a ${toNumber}:`, error.message);
     throw error;
   }
 }
@@ -85,7 +86,7 @@ app.post('/webhook', async (req, res) => {
     userStates.set(fromNumber, userState);
     res.status(200).send('OK');
     } catch (error) {
-    console.error('❌ Error procesando webhook:', error);
+    console.error('Error procesando webhook:', error);
     res.status(500).send('Error interno del servidor');
 }
 });
@@ -112,10 +113,10 @@ app.get('/', (req, res) => {
 
 
 app.listen(PORT, () => {
-  console.log(`\n🚀 Servidor iniciado en puerto ${PORT}`);
-  console.log(`📱 Webhook URL: http://localhost:${PORT}/webhook`);
-  console.log(`🏥 Health check: http://localhost:${PORT}/health`);
-  console.log(`\n✅ Bot listo para recibir mensajes de WhatsApp\n`);
+  console.log(`\nServidor iniciado en puerto ${PORT}`);
+  console.log(`Webhook URL: http://localhost:${PORT}/webhook`);
+  console.log(`Health check: http://localhost:${PORT}/health`);
+  console.log(`\nBot listo para recibir mensajes de WhatsApp\n`);
 });
 
 
